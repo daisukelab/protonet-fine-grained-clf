@@ -107,7 +107,7 @@ def meta_gradient_step(model: Module,
             optimiser.zero_grad()
             # Dummy pass in order to create `loss` variable
             # Replace dummy gradients with mean task gradients using hooks
-            logits = model(torch.zeros((k_way, ) + data_shape).to(device, dtype=torch.float))
+            logits = model(torch.zeros((k_way, ) + data_shape).to(device, dtype=torch.double))
             loss = loss_fn(logits, create_nshot_task_label(k_way, 1).to(device))
             loss.backward()
             optimiser.step()

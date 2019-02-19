@@ -8,9 +8,15 @@ from few_shot.core import NShotTaskSampler, EvaluateFewShot, prepare_nshot_task
 from few_shot.proto import proto_net_episode
 from few_shot.train import fit
 from few_shot.callbacks import *
+from torch.utils.data import DataLoader
+from torch import nn
+import argparse
+
+from few_shot.models import FewShotClassifier
+from few_shot.maml import meta_gradient_step
 
 from dlcliche.utils import *
-
+from config import PATH
 assert torch.cuda.is_available()
 device = torch.device('cuda')
 
@@ -129,3 +135,92 @@ def train_proto_net(args, model, device, n_epochs,
         fit_function_kwargs={'n_shot': args.n_train, 'k_way': args.k_train, 'q_queries': args.q_train, 'train': True,
                              'distance': args.distance},
     )
+    
+    
+import torch
+from collections import OrderedDict
+from torch.optim import Optimizer
+from torch.nn import Module
+from typing import Dict, List, Callable, Union
+
+from few_shot.core import create_nshot_task_label
+
+
+def replace_grad(parameter_gradients, parameter_name):
+    def replace_grad_(module):
+        return parameter_gradients[parameter_name]
+
+    return replace_grad_
+
+
+def train_maml(args, device, n_epochs,
+                    background_taskloader,
+                    evaluation_taskloader,
+                    num_input_channels,
+                    path='.',
+                    fc_layer_size=1600
+                   ):
+    # Prepare model
+    meta_model = FewShotClassifier(num_input_channels, args.k, fc_layer_size).to(device, dtype=torch.double)
+    meta_model.train(True)
+
+    # Prepare training etc.
+    meta_optimiser = torch.optim.Adam(meta_model.parameters(), lr=args.meta_lr)
+    loss_fn = nn.CrossEntropyLoss().to(device)
+    ensure_folder(path + '/models')
+    ensure_folder(path + '/logs')
+    
+    def prepare_meta_batch(n, k, q, meta_batch_size):
+        def prepare_meta_batch_(batch):
+            x, y = batch
+            # Reshape to `meta_batch_size` number of tasks. Each task contains
+            # n*k support samples to train the fast model on and q*k query samples to
+            # evaluate the fast model on and generate meta-gradients
+            x = x.reshape(meta_batch_size, n*k + q*k, num_input_channels, x.shape[-2], x.shape[-1])
+            # Move to device
+            x = x.double().to(device)
+            # Create label
+            y = create_nshot_task_label(k, q).cuda().repeat(meta_batch_size)
+            return x, y
+        return prepare_meta_batch_
+
+    callbacks = [
+        EvaluateFewShot(
+            eval_fn=meta_gradient_step,
+            num_tasks=args.eval_batches,
+            n_shot=args.n,
+            k_way=args.k,
+            q_queries=args.q,
+            taskloader=evaluation_taskloader,
+            prepare_batch=prepare_meta_batch(args.n, args.k, args.q, args.meta_batch_size),
+            # MAML kwargs
+            inner_train_steps=args.inner_val_steps,
+            inner_lr=args.inner_lr,
+            device=device,
+            order=args.order,
+        ),
+        ModelCheckpoint(
+            filepath=PATH + f'/models/{args.param_str}.pth',
+            monitor=f'val_{args.n}-shot_{args.k}-way_acc'
+        ),
+        ReduceLROnPlateau(patience=10, factor=0.5, monitor=f'val_loss'),
+        CSVLogger(PATH + f'/logs/{args.param_str}.csv'),
+    ]
+
+
+    fit(
+        meta_model,
+        meta_optimiser,
+        loss_fn,
+        epochs=args.epochs,
+        dataloader=background_taskloader,
+        prepare_batch=prepare_meta_batch(args.n, args.k, args.q, args.meta_batch_size),
+        callbacks=callbacks,
+        metrics=['categorical_accuracy'],
+        fit_function=meta_gradient_step,
+        fit_function_kwargs={'n_shot': args.n, 'k_way': args.k, 'q_queries': args.q,
+                             'train': True,
+                             'order': args.order, 'device': device, 'inner_train_steps': args.inner_train_steps,
+                             'inner_lr': args.inner_lr},
+    )
+
