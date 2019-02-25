@@ -101,7 +101,9 @@ class ExtModelProtoNetClf(object):
         proto_embs = [p.mean() for p in self.prototypes]
         for idx_sample, x in tqdm(enumerate(X_embs), total=len(X_embs)):
             for idx_class, proto in enumerate(proto_embs):
-                preds[idx_sample, idx_class] = -np.log(np.sum((x - proto)**2) + 1e-300) # preventing log(0)
+                # FIXED on Feb-24: preds[idx_sample, idx_class] = -np.log(np.sum((x - proto)**2) + 1e-300) # preventing log(0)
+                # No log should be applied -> All distances sould be 0 or minus values. Taking log() have broken this.
+                preds[idx_sample, idx_class] = -np.sum((x - proto)**2)
             if softmax:
                 preds[idx_sample, :] = np_softmax(preds[idx_sample])
         return preds
