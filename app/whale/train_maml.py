@@ -18,8 +18,8 @@ from few_shot.utils import setup_dirs
 # Basic training parameters
 args = EasyDict()
 
-args.n = 1
-args.k = 5
+args.n = 1 
+args.k = 10 
 args.q = 1
 
 SZ = 224
@@ -27,12 +27,12 @@ RE_SZ = 256
 
 args.inner_train_steps = 1
 args.inner_val_steps = 3
-args.inner_lr = 0.4
+args.inner_lr = 0.01
 args.meta_lr = 0.001
 args.meta_batch_size = 32
 args.order = 1
-args.epochs = 50
-args.epoch_len = 100
+args.epochs = 20 
+args.epoch_len = 30 
 args.eval_batches = 20
 
 data_train = DATA_PATH+'/train'
@@ -40,7 +40,7 @@ data_test  = DATA_PATH+'/test'
 
 args.param_str = f'app_maml_whale_n{args.n}_k{args.k}_q{args.q}'
 args.checkpoint_monitor = 'categorical_accuracy'
-args.checkpoint_period = 50
+args.checkpoint_period = 10
 args.init_weight = None
 print(f'Training {args.param_str}.')
 

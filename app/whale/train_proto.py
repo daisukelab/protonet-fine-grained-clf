@@ -19,15 +19,18 @@ args.k_test = 10
 SZ = 224
 RE_SZ = 256
 
-args.n_epochs = 100
+args.n_epochs = 50
 args.drop_lr_every = 50
-args.lr = 3e-3
-args.init_weight = None
+args.lr = 0.06125e-3
+args.init_weight = 'app_whale_n1_k50_q1_sz224_dense121_epoch200.pth'
 
 data_train = DATA_PATH+'/train'
 data_test  = DATA_PATH+'/test'
-
 args.param_str = f'app_whale_n{args.n_train}_k{args.k_train}_q{args.q_train}'
+args.checkpoint_monitor = 'categorical_accuracy'
+args.checkpoint_period = 50
+
+args.param_str = f'app_whale_n{args.n_train}_k{args.k_train}_q{args.q_train}_sz224_dense121'
 args.checkpoint_monitor = 'categorical_accuracy'
 args.checkpoint_period = 50
 
@@ -52,7 +55,7 @@ args.evaluation_episodes = 100 # setting small value, anyway validation set is a
 print(f'Samples = {len(trn_images)}, {len(val_images)}')
 
 # Model
-feature_model = get_resnet18(device=device, weight_file=args.init_weight)
+feature_model = get_densenet121(device=device, weight_file=args.init_weight)
 
 # Dataloader
 background = WhaleImages(data_train, trn_images, trn_labels, re_size=RE_SZ, to_size=SZ)
@@ -81,4 +84,5 @@ train_proto_net(args,
                 episodes_per_epoch=args.episodes_per_epoch,
                 lr=args.lr,
                )
-torch.save(feature_model.state_dict(), f'{args.param_str}_epoch{args.n_epochs}.pth')
+#torch.save(feature_model.state_dict(), f'{args.param_str}_epoch{args.n_epochs}.pth')
+torch.save(feature_model.state_dict(), f'{args.param_str}_epoch250.pth')

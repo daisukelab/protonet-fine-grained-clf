@@ -14,8 +14,8 @@ from few_shot.extmodel_proto_net_clf import ExtModelProtoNetClf
 from app_utils_clf import *
 
 
-def _get_test_images(data_test):
-    return [str(f).replace(data_test+'/', '') for f in Path(data_test).glob('*.jpg')]
+def get_test_images(data_test):
+    return sorted([str(f).replace(data_test+'/', '') for f in Path(data_test).glob('*.jpg')])
 
 
 def get_aug(re_size=224, to_size=224, train=True):
@@ -120,7 +120,7 @@ def calculate_results(weight, SZ, get_model_fn, device, train_csv='data/data.csv
     labels = df.Id.values
 
     # Test samples
-    test_images = _get_test_images(data_test)
+    test_images = get_test_images(data_test)
     dummy_test_gts = list(range(len(test_images)))
 
     print(f'Training samples: {len(images)}, # of labels: {len(list(set(labels)))}.')
@@ -161,7 +161,7 @@ def top_5_pred_labels(preds, classes):
 
 def prepare_submission(submission_filename, test_dists, new_whale_thresh, data_test, classes):
     def _create_proto_submission(preds, name, classes):
-        sub = pd.DataFrame({'Image': _get_test_images(data_test)})
+        sub = pd.DataFrame({'Image': get_test_images(data_test)})
         sub['Id'] = [classes[i] if not isinstance(i, str) else i for i in 
                      top_5_pred_labels(torch.tensor(preds), classes)]
         ensure_folder('subs')
