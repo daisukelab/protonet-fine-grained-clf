@@ -44,9 +44,10 @@ def get_img_loader(folder, to_gray=False):
 
 
 class WhaleImages(Dataset):
-    def __init__(self, path, images, labels, re_size=256, to_size=224, train=True):
+    def __init__(self, path, images, labels, coords, re_size=256, to_size=224, train=True):
         self.datasetid_to_filepath = images
         self.datasetid_to_class_id = labels
+        self.datasetid_to_coords   = coords
         self.classes = sorted(list(set(labels)))
         
         self.df = pd.DataFrame({'class_id':labels, 'id':list(range(len(images)))})
@@ -57,6 +58,14 @@ class WhaleImages(Dataset):
 
     def __getitem__(self, item):
         instance = self.loader(self.datasetid_to_filepath[item])
+        y0, x0, y1, x1 = self.datasetid_to_coords[item]
+        l1,l0,_ = instance.shape
+        b0,b1 = x1-x0, y1-y0
+        #padding
+        x0n,x1n = max(int(x0 - b0*0.05),0), min(int(x1 + b0*0.05),l0-1)
+        y0n,y1n = max(int(y0 - b1*0.05),0), min(int(y1 + b1*0.05),l1-1)
+        instance = instance[y0n:y1n,x0n:x1n,:]
+        
         instance = self.transform(image=instance)['image']
         instance = self.to_tensor(instance)
         label = self.datasetid_to_class_id[item]
@@ -112,35 +121,42 @@ def get_classes(data='data', except_new_whale=True, append_new_whale_last=True):
 
 
 def calculate_results(weight, SZ, get_model_fn, device, train_csv='data/data.csv',
-                      data_train='data/train', data_test='data/test'):
+                      data_train='data/train', data_test='data/test', bbox_csv='data/coords.csv'):
     # Training samples
     df = pd.read_csv(train_csv)
     df = df[df.Id != 'new_whale']
     images = df.Image.values
     labels = df.Id.values
+    bbox = pd.read_csv(bbox_csv)
+    coords = df.merge(bbox, left_on='Image', right_on='filename')['coords'].apply(lambda c: eval(c)).values
 
     # Test samples
     test_images = get_test_images(data_test)
+    df_test = pd.DataFrame({'Image': get_test_images(data_test)})
+    coords_test = df_test.merge(bbox, left_on='Image', right_on='filename')['coords'].apply(lambda c: eval(c)).values
     dummy_test_gts = list(range(len(test_images)))
+
+    # read bbox info
+    bbox = pd.read_csv('coords.csv')
 
     print(f'Training samples: {len(images)}, # of labels: {len(list(set(labels)))}.')
     print(f'Test samples: {len(test_images)}.')
     print(f'Work in progress for {weight}...')
 
-    def get_dl(images, labels, folder, SZ=SZ, batch_size=64):
-        ds = WhaleImages(folder, images, labels, re_size=SZ, to_size=SZ, train=False)
+    def get_dl(images, labels, coords, folder, SZ=SZ, batch_size=64):
+        ds = WhaleImages(folder, images, labels, coords, re_size=SZ, to_size=SZ, train=False)
         dl = DataLoader(ds, batch_size=batch_size)
         return dl
 
     # Make prototypes
-    trn_dl = get_dl(images, labels, data_train)
+    trn_dl = get_dl(images, labels, coords, data_train)
     model = get_model_fn(device=device, weight_file=weight+'.pth')
     proto_net = ExtModelProtoNetClf(model, trn_dl.dataset.classes, device)
 
     proto_net.make_prototypes(trn_dl)
 
     # Calculate distances
-    test_dl = get_dl(test_images, dummy_test_gts, data_test)
+    test_dl = get_dl(test_images, dummy_test_gts, coords_test, data_test)
     test_embs, gts = proto_net.get_embeddings(test_dl)
     test_dists = proto_net.predict_embeddings(test_embs, softmax=False)
 

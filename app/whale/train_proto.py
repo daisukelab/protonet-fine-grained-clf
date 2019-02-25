@@ -44,10 +44,17 @@ classes = sorted(list(set(ids)))
 images = df.Image.values
 all_cls2imgs = {cls:images[ids == cls] for cls in classes}
 
+# bbox
+bbox = pd.read_csv(DATA_PATH + 'coords.csv')
+coords = df.merge(bbox, left_on='Image', right_on='filename')['coords'].apply(lambda c: eval(c)).values
+
 trn_images = [image for image, _id in zip(images, ids) if len(all_cls2imgs[_id]) >= 2]
 trn_labels = [_id   for image, _id in zip(images, ids) if len(all_cls2imgs[_id]) >= 2]
+trn_coords = [coords for coords , _id in zip(coords, ids) if len(all_cls2imgs[_id]) >= 2]
+
 val_images = [image for image, _id in zip(images, ids) if len(all_cls2imgs[_id]) == 2]
 val_labels = [_id   for image, _id in zip(images, ids) if len(all_cls2imgs[_id]) == 2]
+val_coords = [coords for coords , _id in zip(coords, ids) if len(all_cls2imgs[_id]) == 2]
 
 args.episodes_per_epoch = len(trn_images) // args.k_train + 1
 args.evaluation_episodes = 100 # setting small value, anyway validation set is almost useless here
@@ -58,13 +65,13 @@ print(f'Samples = {len(trn_images)}, {len(val_images)}')
 feature_model = get_densenet121(device=device, weight_file=args.init_weight)
 
 # Dataloader
-background = WhaleImages(data_train, trn_images, trn_labels, re_size=RE_SZ, to_size=SZ)
+background = WhaleImages(data_train, trn_images, trn_labels, trn_coords, re_size=RE_SZ, to_size=SZ)
 background_taskloader = DataLoader(
     background,
     batch_sampler=NShotTaskSampler(background, args.episodes_per_epoch, args.n_train, args.k_train, args.q_train),
     num_workers=8
 )
-evaluation = WhaleImages(data_train, val_images, val_labels, re_size=RE_SZ, to_size=SZ, train=False)
+evaluation = WhaleImages(data_train, val_images, val_labels, val_coords, re_size=RE_SZ, to_size=SZ, train=False)
 evaluation_taskloader = DataLoader(
     evaluation,
     batch_sampler=NShotTaskSampler(evaluation, args.episodes_per_epoch, args.n_test, args.k_test, args.q_test),
